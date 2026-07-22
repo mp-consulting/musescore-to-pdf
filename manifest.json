@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Musescore To PDF",
+  "version": "1.0.0",
+  "description": "Exports score pages that are visible and accessible in your MuseScore session to one PDF.",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": [
+    "https://musescore.com/*",
+    "https://*.musescore.com/*",
+    "https://*.ustatik.com/*"
+  ],
+  "action": {
+    "default_title": "Musescore To PDF",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://musescore.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
