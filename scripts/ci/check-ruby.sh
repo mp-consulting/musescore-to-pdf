@@ -10,7 +10,7 @@ echo "--- Ruby syntax"
 ruby -c scripts/pdf_to_score.rb
 
 echo "--- RuboCop"
-bundle exec rubocop scripts/pdf_to_score.rb
+bundle exec rubocop
 
 echo "--- RSpec"
 bundle exec rspec

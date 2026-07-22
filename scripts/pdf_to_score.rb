@@ -12,7 +12,8 @@ require 'tmpdir'
 # by rasterizing each page, transcribing it with Audiveris, and joining the
 # per-page results into a single score.
 module PdfToScore
-  Error = Class.new(StandardError)
+  class Error < StandardError
+  end
 
   DEFAULT_AUDIVERIS_CONTENTS = '/Applications/Audiveris.app/Contents'
   DEFAULT_MUSESCORE = '/Applications/MuseScore 4.app/Contents/MacOS/mscore'

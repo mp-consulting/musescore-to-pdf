@@ -1,0 +1,9 @@
+AllCops:
+  TargetRubyVersion: 3.1
+  NewCops: enable
+  SuggestExtensions: false
+
+# RSpec describe blocks are naturally long; length limits add no value there.
+Metrics/BlockLength:
+  Exclude:
+    - 'spec/**/*'

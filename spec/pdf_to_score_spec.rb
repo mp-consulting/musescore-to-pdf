@@ -1,5 +1,47 @@
 # frozen_string_literal: true
 
+# Builds minimal per-page MXL fixtures for the ScoreJoiner specs.
+module MxlFixtures
+  CONTAINER_XML = <<~XML
+    <?xml version="1.0" encoding="UTF-8"?>
+    <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+      <rootfiles><rootfile full-path="score.musicxml" media-type="application/vnd.recordare.musicxml+xml"/></rootfiles>
+    </container>
+  XML
+
+  module_function
+
+  def write_page_mxl(dir, page_index, measure_counts)
+    Dir.mktmpdir do |package|
+      File.write(File.join(package, 'score.musicxml'), musicxml_for(measure_counts))
+      FileUtils.mkdir_p(File.join(package, 'META-INF'))
+      File.write(File.join(package, 'META-INF', 'container.xml'), CONTAINER_XML)
+      target = File.join(dir, "page-#{page_index}.mxl")
+      system('zip', '-q', '-r', target, 'META-INF', 'score.musicxml', chdir: package) || raise('zip failed')
+    end
+  end
+
+  def musicxml_for(measure_counts)
+    <<~XML
+      <?xml version="1.0" encoding="UTF-8"?>
+      <score-partwise version="3.1"><part-list>#{score_parts_xml(measure_counts)}</part-list>#{parts_xml(measure_counts)}</score-partwise>
+    XML
+  end
+
+  def score_parts_xml(measure_counts)
+    measure_counts.each_index.map do |i|
+      %(<score-part id="P#{i + 1}"><part-name>Part #{i + 1}</part-name></score-part>)
+    end.join
+  end
+
+  def parts_xml(measure_counts)
+    measure_counts.each_with_index.map do |count, i|
+      measures = (1..count).map { |n| %(<measure number="#{n}"><note><duration>4</duration></note></measure>) }.join
+      %(<part id="P#{i + 1}">#{measures}</part>)
+    end.join
+  end
+end
+
 RSpec.describe PdfToScore do
   describe '.page_number' do
     it 'extracts the trailing index from a page filename' do
@@ -77,36 +119,7 @@ RSpec.describe PdfToScore::Converter do
 end
 
 RSpec.describe PdfToScore::ScoreJoiner do
-  CONTAINER_XML = <<~XML
-    <?xml version="1.0" encoding="UTF-8"?>
-    <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-      <rootfiles><rootfile full-path="score.musicxml" media-type="application/vnd.recordare.musicxml+xml"/></rootfiles>
-    </container>
-  XML
-
-  def write_page_mxl(dir, page_index, measure_counts)
-    Dir.mktmpdir do |package|
-      File.write(File.join(package, 'score.musicxml'), musicxml_for(measure_counts))
-      FileUtils.mkdir_p(File.join(package, 'META-INF'))
-      File.write(File.join(package, 'META-INF', 'container.xml'), CONTAINER_XML)
-      target = File.join(dir, "page-#{page_index}.mxl")
-      system('zip', '-q', '-r', target, 'META-INF', 'score.musicxml', chdir: package) || raise('zip failed')
-    end
-  end
-
-  def musicxml_for(measure_counts)
-    score_parts = measure_counts.each_index.map do |i|
-      %(<score-part id="P#{i + 1}"><part-name>Part #{i + 1}</part-name></score-part>)
-    end.join
-    parts = measure_counts.each_with_index.map do |count, i|
-      measures = (1..count).map { |n| %(<measure number="#{n}"><note><duration>4</duration></note></measure>) }.join
-      %(<part id="P#{i + 1}">#{measures}</part>)
-    end.join
-    <<~XML
-      <?xml version="1.0" encoding="UTF-8"?>
-      <score-partwise version="3.1"><part-list>#{score_parts}</part-list>#{parts}</score-partwise>
-    XML
-  end
+  include MxlFixtures
 
   it 'keeps common parts, renumbers measures, and marks page breaks' do
     Dir.mktmpdir do |dir|
