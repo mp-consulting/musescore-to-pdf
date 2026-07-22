@@ -49,6 +49,8 @@ GEM
 
 PLATFORMS
   arm64-darwin-23
+  arm64-linux
+  x86_64-linux
 
 DEPENDENCIES
   rexml (~> 3.3)
