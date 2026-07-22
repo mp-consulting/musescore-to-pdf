@@ -5,6 +5,9 @@
 .idea/
 .vscode/
 
+# Dependencies
+node_modules/
+
 # Generated score conversions (pdf-to-score output folders)
 /output/
 *-work/

@@ -1,0 +1,40 @@
+{
+  "name": "@mp-consulting/musescore-to-pdf",
+  "displayName": "MuseScore To PDF",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chrome extension exporting accessible MuseScore scores to PDF, plus a Ruby CLI converting scanned sheet-music PDFs to editable scores via Audiveris OMR.",
+  "author": "Mickael Palma",
+  "license": "MIT",
+  "funding": {
+    "type": "paypal",
+    "url": "https://paypal.me/mickaelpalma"
+  },
+  "homepage": "https://github.com/mp-consulting/musescore-to-pdf#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mp-consulting/musescore-to-pdf.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mp-consulting/musescore-to-pdf/issues"
+  },
+  "keywords": [
+    "audiveris",
+    "chrome-extension",
+    "musescore",
+    "musicxml",
+    "omr",
+    "pdf",
+    "sheet-music"
+  ],
+  "engines": {
+    "node": "^20.18.0 || ^22.10.0 || ^24.0.0"
+  },
+  "scripts": {
+    "test": "jest",
+    "check": "scripts/ci/check-extension.sh && scripts/ci/check-ruby.sh"
+  },
+  "devDependencies": {
+    "jest": "^30.0.0"
+  }
+}

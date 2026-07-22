@@ -59,11 +59,12 @@ Requirements: Ruby, `pdftoppm` (Poppler), `zip`, `unzip`, [Audiveris](https://au
 
 ## Development
 
-CI (GitHub Actions) lints the Ruby script with RuboCop and syntax-checks the extension scripts and manifest on every push. To run the same checks locally:
+CI (GitHub Actions) runs two jobs on every push: RuboCop, RSpec, and a smoke test for the CLI; syntax checks, manifest validation, and Jest for the extension. Run the same checks locally with:
 
 ```sh
-rubocop scripts/pdf_to_score.rb
-node --check background.js content.js popup.js
+bundle install && npm install   # once
+scripts/ci/check-ruby.sh
+scripts/ci/check-extension.sh
 ```
 
 ## License

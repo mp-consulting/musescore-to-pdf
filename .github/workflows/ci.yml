@@ -8,51 +8,26 @@ on:
 
 jobs:
   ruby-cli:
-    name: Ruby CLI (syntax + RuboCop)
+    name: Ruby CLI
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.1'
-      - name: Syntax check
-        run: ruby -c scripts/pdf_to_score.rb
-      - name: Install RuboCop
-        run: gem install rubocop -v 1.84.0
-      - name: RuboCop
-        run: rubocop scripts/pdf_to_score.rb
-      - name: CLI smoke test
-        run: |
-          ruby scripts/pdf_to_score.rb --help
-          if ruby scripts/pdf_to_score.rb /nonexistent.pdf; then
-            echo "Expected failure for missing PDF" && exit 1
-          fi
+          bundler-cache: true
+      - name: Lint, test, and smoke test
+        run: scripts/ci/check-ruby.sh
 
   chrome-extension:
-    name: Chrome extension (syntax + manifest)
+    name: Chrome extension
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Syntax check scripts
-        run: |
-          node --check background.js
-          node --check content.js
-          node --check popup.js
-      - name: Validate manifest
-        run: |
-          node -e '
-            const manifest = JSON.parse(require("fs").readFileSync("manifest.json", "utf8"));
-            const assert = require("assert");
-            assert.strictEqual(manifest.manifest_version, 3, "manifest_version must be 3");
-            for (const key of ["name", "version", "action", "background", "content_scripts"]) {
-              assert.ok(manifest[key], `manifest is missing ${key}`);
-            }
-            for (const file of [manifest.background.service_worker, manifest.action.default_popup,
-                                ...manifest.content_scripts.flatMap((cs) => cs.js)]) {
-              assert.ok(require("fs").existsSync(file), `referenced file does not exist: ${file}`);
-            }
-            console.log("manifest OK");
-          '
+          cache: npm
+      - run: npm ci
+      - name: Lint, validate, and test
+        run: scripts/ci/check-extension.sh

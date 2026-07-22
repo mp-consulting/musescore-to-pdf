@@ -5,8 +5,7 @@
 
   // The popup injects this script when the manifest-declared copy is not
   // running yet; the guard keeps a second injection from re-registering.
-  if (window.museScoreToPdfLoaded) return;
-  window.museScoreToPdfLoaded = true;
+  if (window.museScoreToPdf) return;
 
   const EXPORT_MESSAGE = 'EXPORT_SCORE_PDF';
   const FETCH_SVG_MESSAGE = 'FETCH_SVG_PAGE';
@@ -337,4 +336,8 @@
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
+
+  // Doubles as the double-injection guard and exposes the pure helpers so the
+  // test suite can exercise them outside a browser.
+  window.museScoreToPdf = { addPageUrl, safeName, joinBytes, buildPdf };
 })();
