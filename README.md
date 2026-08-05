@@ -2,14 +2,14 @@
 
 Two complementary tools for moving sheet music between MuseScore and PDF:
 
-- **Chrome extension** — exports the score pages you can already see on `musescore.com` into a single, print-ready PDF.
+- **Chrome extension** — exports the score pages you can already see on `musescore.com` into a single, print-ready PDF, whether the score is published as SVG pages or as images.
 - **`pdf-to-score` CLI** — goes the other way: converts a scanned sheet-music PDF into an editable score (MusicXML, MXL, or MuseScore) using [Audiveris](https://audiveris.github.io/audiveris/) optical music recognition.
 
-Neither tool bypasses access controls. The extension only captures SVG pages that are already visible and accessible to your logged-in session — it does **not** discover hidden page URLs, bypass previews, or unlock subscription-only content. Only use these tools for scores you are authorized to download or reproduce.
+Neither tool bypasses access controls. The extension only captures pages that are already visible and accessible to your logged-in session — it does **not** discover hidden page URLs, bypass previews, or unlock subscription-only content. Only use these tools for scores you are authorized to download or reproduce.
 
 ## Chrome extension
 
-A dependency-free Manifest V3 extension. It renders each SVG page to high-quality JPEG on a canvas and assembles the PDF entirely in the browser — no remote JavaScript, no external services.
+A dependency-free Manifest V3 extension. It renders each page to high-quality JPEG on a canvas and assembles the PDF entirely in the browser — no remote JavaScript, no external services.
 
 ### Install locally
 
@@ -23,8 +23,10 @@ After updating the extension's files, click **Reload** on `chrome://extensions` 
 
 ### How it works
 
-- The extension scrolls the actual MuseScore viewer—or the browser window when the viewer is not independently scrollable—to trigger normal lazy loading. SVG URLs are captured as soon as each virtualized page enters the viewport, even if MuseScore removes that image from the DOM later.
-- SVG requests are made by the extension's background worker so MuseScore CDN pages can be read without content-script cross-origin restrictions.
+- The extension scrolls the actual MuseScore viewer—or the browser window when the viewer is not independently scrollable—to trigger normal lazy loading. Page URLs are captured as soon as each virtualized page enters the viewport, even if MuseScore removes that image from the DOM later.
+- Scores are published either as SVG pages (`score_3.svg`) or as images (`score_3.png@0`). Image pages are taken at their full size marker and drawn at their native resolution, since upscaling a raster adds nothing but bytes; SVG pages are still rendered above their nominal size.
+- Recommended scores in the sidebar have a `score_0` of their own, so pages are only accepted from the asset folder the viewer is actually rendering, and a full-size page always beats a thumbnail of the same index.
+- Page requests are made by the extension's background worker so MuseScore CDN pages can be read without content-script cross-origin restrictions.
 - Pages are embedded into an A4-sized PDF and downloaded as a standard browser download, named after the score page's visible `<h1>` heading (falling back to page metadata, then the tab title).
 
 ### Caveats

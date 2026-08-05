@@ -46,7 +46,7 @@ describe('content script', () => {
     expect(sandbox.listenerCount).toBe(1);
   });
 
-  test('addPageUrl collects score SVG URLs keyed by page index', () => {
+  test('addPageUrl collects score page URLs keyed by page index', () => {
     const api = loadContentApi();
     const pages = new Map();
     api.addPageUrl('https://musescore.com/static/score_3.svg?token=abc', pages);
@@ -56,6 +56,55 @@ describe('content script', () => {
     api.addPageUrl('https://musescore.com/static/score_3.svg.bak', pages); // wrong suffix
     expect([...pages.keys()].sort((a, b) => a - b)).toEqual([3, 10]);
     expect(pages.get(3).index).toBe(3);
+  });
+
+  test('addPageUrl collects image pages, size marker and all', () => {
+    const api = loadContentApi();
+    const pages = new Map();
+    api.addPageUrl('https://musescore.com/scoredata/g/abc/score_0.png@0?no-cache=1', pages);
+    api.addPageUrl('https://cdn.ustatik.com/scoredata/g/abc/score_1.jpg', pages);
+    expect([...pages.keys()].sort((a, b) => a - b)).toEqual([0, 1]);
+    expect(pages.get(0).src).toMatch(/score_0\.png@0/);
+  });
+
+  test('addPageUrl keeps the full-size page over a thumbnail of it', () => {
+    const api = loadContentApi();
+    const thumbnailFirst = new Map();
+    api.addPageUrl('https://cdn.ustatik.com/scoredata/g/abc/score_0.png@500x660', thumbnailFirst);
+    api.addPageUrl('https://musescore.com/scoredata/g/abc/score_0.png@0', thumbnailFirst);
+    expect(thumbnailFirst.get(0).src).toMatch(/@0$/);
+
+    const fullFirst = new Map();
+    api.addPageUrl('https://musescore.com/scoredata/g/abc/score_0.png@0', fullFirst);
+    api.addPageUrl('https://cdn.ustatik.com/scoredata/g/abc/score_0.png@500x660', fullFirst);
+    expect(fullFirst.get(0).src).toMatch(/@0$/);
+  });
+
+  test('addPageUrl ignores pages outside the score being viewed', () => {
+    const api = loadContentApi();
+    const pages = new Map();
+    // Recommended scores in the sidebar have a score_0 of their own.
+    api.addPageUrl('https://musescore.com/scoredata/g/mine/score_0.png@0', pages, 'mine');
+    api.addPageUrl('https://cdn.ustatik.com/scoredata/g/other/score_0.png@500x660', pages, 'mine');
+    api.addPageUrl('https://cdn.ustatik.com/scoredata/g/mine/score_1.png@0', pages, 'mine');
+    expect([...pages.keys()].sort((a, b) => a - b)).toEqual([0, 1]);
+    expect(pages.get(0).src).toContain('/mine/');
+  });
+
+  test('pageSizeRank ranks the full page above any thumbnail', () => {
+    const api = loadContentApi();
+    expect(api.pageSizeRank('@0')).toBe(Infinity);
+    expect(api.pageSizeRank(undefined)).toBe(Infinity);
+    expect(api.pageSizeRank('@500x660')).toBe(500);
+    expect(api.pageSizeRank('@150x198')).toBe(150);
+  });
+
+  test('isVectorPage tells SVG pages from image pages', () => {
+    const api = loadContentApi();
+    expect(api.isVectorPage('https://musescore.com/score_1.svg?token=x')).toBe(true);
+    expect(api.isVectorPage('https://musescore.com/score_1.svg')).toBe(true);
+    expect(api.isVectorPage('https://musescore.com/score_1.png@0')).toBe(false);
+    expect(api.isVectorPage('https://musescore.com/score_1.jpg')).toBe(false);
   });
 
   test('safeName strips filesystem-hostile characters and truncates', () => {
@@ -100,15 +149,18 @@ describe('content script', () => {
 });
 
 describe('background worker', () => {
-  test('only allows MuseScore score SVG URLs', () => {
+  test('only allows MuseScore score page URLs', () => {
     const background = loadBackground();
-    const allowed = (url) => background.isAllowedSvgUrl(new URL(url));
+    const allowed = (url) => background.isAllowedPageUrl(new URL(url));
     expect(allowed('https://musescore.com/static/score_1.svg')).toBe(true);
     expect(allowed('https://cdn.s3.musescore.com/score_22.svg?token=x')).toBe(true);
     expect(allowed('https://cdn.ustatik.com/img/score_5.svg')).toBe(true);
+    expect(allowed('https://musescore.com/scoredata/g/abc/score_0.png@0?no-cache=1')).toBe(true);
+    expect(allowed('https://cdn.ustatik.com/scoredata/g/abc/score_7.jpg')).toBe(true);
     expect(allowed('http://musescore.com/static/score_1.svg')).toBe(false); // plain http
     expect(allowed('https://evilmusescore.com/score_1.svg')).toBe(false); // lookalike host
     expect(allowed('https://musescore.com/robots.txt')).toBe(false); // non-score path
     expect(allowed('https://musescore.com/score_1.svg.js')).toBe(false); // suffixed path
+    expect(allowed('https://musescore.com/score_1.png@0.js')).toBe(false); // suffixed marker
   });
 });

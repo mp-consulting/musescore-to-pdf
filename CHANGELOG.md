@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Extension support for scores published as images rather than SVG: page URLs
+  ending in `.png`/`.jpg`, with the size marker MuseScore appends to them
+  (`score_0.png@0`). Image pages are drawn at native resolution instead of
+  being upscaled, and the full-size page is preferred over a thumbnail of it.
+  Pages are accepted only from the asset folder the viewer is rendering, so a
+  recommended score's own `score_0` cannot be mistaken for a page.
 - Per-page DPI retry: a page Audiveris aborts on is rasterized again at 400,
   300, 500, 250, and 600 DPI until one of them transcribes. A page that fails
   at every resolution no longer ends the run - the score is written from the

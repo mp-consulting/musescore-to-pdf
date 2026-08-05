@@ -1,5 +1,6 @@
-// Content script: discovers the score's SVG pages (scrolling to trigger lazy
+// Content script: discovers the score's pages (scrolling to trigger lazy
 // loading), renders each to JPEG, assembles a single PDF, and downloads it.
+// A score is published either as SVG pages or as PNG ones.
 (() => {
   'use strict';
 
@@ -8,15 +9,22 @@
   if (window.museScoreToPdf) return;
 
   const EXPORT_MESSAGE = 'EXPORT_SCORE_PDF';
-  const FETCH_SVG_MESSAGE = 'FETCH_SVG_PAGE';
+  const FETCH_PAGE_MESSAGE = 'FETCH_SCORE_PAGE';
 
   const VIEWER_SELECTOR = '#jmuse-scroller-component';
-  const PAGE_URL_PATTERN = /\/score_(\d+)\.svg(?:\?|$)/i;
+  // Captures the asset folder, the page index, and the size marker that image
+  // pages carry ("@0" is the full page, "@500x660" a thumbnail).
+  const PAGE_URL_PATTERN = /\/([^/]+)\/score_(\d+)\.(svg|png|jpe?g)(@\d+(?:x\d+)?)?(?:[?#]|$)/i;
+
+  // A page the viewer renders is far larger than any thumbnail beside it.
+  const MIN_PAGE_EDGE_PX = 400;
 
   // Rendering: cap page raster size and JPEG quality; fallback dimensions
-  // match MuseScore's standard page aspect ratio.
+  // match MuseScore's standard page aspect ratio. SVG pages are worth
+  // rendering above their nominal size, image pages have no detail to gain.
   const MAX_RENDER_EDGE_PX = 2200;
-  const MAX_RENDER_SCALE = 2;
+  const MAX_VECTOR_SCALE = 2;
+  const MAX_IMAGE_SCALE = 1;
   const JPEG_QUALITY = 0.94;
   const FALLBACK_PAGE = { width: 874, height: 1134 };
 
@@ -51,7 +59,7 @@
     const scrollState = captureScrollState(viewer);
     const pages = await discoverPages(viewer);
     restoreScrollState(scrollState);
-    if (!pages.length) throw new Error('No accessible SVG score pages were found.');
+    if (!pages.length) throw new Error('No accessible score pages were found.');
 
     const rendered = [];
     for (const page of pages) rendered.push(await renderPageToJpeg(page.src));
@@ -80,16 +88,19 @@
 
   async function discoverPages(viewer) {
     const collected = new Map();
+    let folder = '';
     const collect = () => {
-      collectVisiblePages(viewer, collected);
-      collectLoadedResources(collected);
+      folder ||= findScoreFolder(viewer);
+      if (!folder) return;
+      collectVisiblePages(viewer, collected, folder);
+      collectLoadedResources(collected, folder);
     };
     collect();
 
     const observer = new MutationObserver(collect);
     observer.observe(viewer, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
     try {
-      await loadLazyPages(viewer, collected);
+      await loadLazyPages(viewer, collected, collect);
     } finally {
       observer.disconnect();
     }
@@ -97,7 +108,20 @@
     return [...collected.values()].sort((a, b) => a.index - b.index);
   }
 
-  async function loadLazyPages(viewer, collected) {
+  // Every page of a score lives in one asset folder. Recommended scores in the
+  // sidebar have a page_0 of their own, so pages are only taken from the folder
+  // the viewer is actually rendering.
+  function findScoreFolder(viewer) {
+    for (const img of viewer.querySelectorAll('img[src]')) {
+      const rect = img.getBoundingClientRect();
+      if (rect.width < MIN_PAGE_EDGE_PX || rect.height < MIN_PAGE_EDGE_PX) continue;
+      const match = String(img.currentSrc || img.src).match(PAGE_URL_PATTERN);
+      if (match) return match[1];
+    }
+    return '';
+  }
+
+  async function loadLazyPages(viewer, collected, collect) {
     const pageSlots = [...viewer.children].filter((element) => {
       const rect = element.getBoundingClientRect();
       return rect.width > 400 && rect.height > 500 && element.querySelectorAll(':scope > img').length <= 1;
@@ -105,7 +129,7 @@
 
     for (const slot of pageSlots) {
       scrollPageIntoViewport(viewer, slot);
-      await collectWhileLoading(viewer, collected);
+      await collectWhileLoading(collected, collect);
     }
   }
 
@@ -138,13 +162,12 @@
     return null;
   }
 
-  async function collectWhileLoading(viewer, collected) {
+  async function collectWhileLoading(collected, collect) {
     let idleChecks = 0;
     let previousSize = collected.size;
     for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS && idleChecks < POLL_IDLE_LIMIT; attempt++) {
       await delay(POLL_INTERVAL_MS);
-      collectVisiblePages(viewer, collected);
-      collectLoadedResources(collected);
+      collect();
       if (collected.size === previousSize) {
         idleChecks++;
       } else {
@@ -154,23 +177,35 @@
     }
   }
 
-  function collectVisiblePages(viewer, collected) {
+  function collectVisiblePages(viewer, collected, folder) {
     for (const img of viewer.querySelectorAll('img[src]')) {
-      addPageUrl(img.currentSrc || img.src, collected);
+      addPageUrl(img.currentSrc || img.src, collected, folder);
     }
   }
 
-  function collectLoadedResources(collected) {
+  function collectLoadedResources(collected, folder) {
     for (const entry of performance.getEntriesByType('resource')) {
-      addPageUrl(entry.name, collected);
+      addPageUrl(entry.name, collected, folder);
     }
   }
 
-  function addPageUrl(url, collected) {
+  function addPageUrl(url, collected, folder) {
     const match = String(url).match(PAGE_URL_PATTERN);
     if (!match) return;
-    const index = Number(match[1]);
-    collected.set(index, { src: String(url), index });
+    if (folder && match[1] !== folder) return;
+
+    const index = Number(match[2]);
+    const size = pageSizeRank(match[4]);
+    const existing = collected.get(index);
+    if (existing && existing.size >= size) return;
+    collected.set(index, { src: String(url), index, size });
+  }
+
+  // MuseScore appends a size marker to image pages: "@0" asks for the page at
+  // full size, "@500x660" for a thumbnail of it. The largest wins.
+  function pageSizeRank(marker) {
+    if (!marker || marker === '@0') return Infinity;
+    return Number(marker.match(/@(\d+)/)?.[1]) || 0;
   }
 
   // --- score title detection ---
@@ -232,12 +267,13 @@
   async function renderPageToJpeg(url) {
     const image = new Image();
     image.decoding = 'async';
-    image.src = await fetchSvgDataUrl(url);
+    image.src = await fetchPageDataUrl(url);
     await image.decode();
 
     const width = image.naturalWidth || FALLBACK_PAGE.width;
     const height = image.naturalHeight || FALLBACK_PAGE.height;
-    const scale = Math.min(MAX_RENDER_SCALE, MAX_RENDER_EDGE_PX / Math.max(width, height));
+    const maxScale = isVectorPage(url) ? MAX_VECTOR_SCALE : MAX_IMAGE_SCALE;
+    const scale = Math.min(maxScale, MAX_RENDER_EDGE_PX / Math.max(width, height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(height * scale);
@@ -247,12 +283,16 @@
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY));
-    if (!blob) throw new Error('Could not render an SVG page.');
+    if (!blob) throw new Error('Could not render a score page.');
     return { bytes: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height };
   }
 
-  async function fetchSvgDataUrl(url) {
-    const response = await chrome.runtime.sendMessage({ type: FETCH_SVG_MESSAGE, url });
+  function isVectorPage(url) {
+    return /\.svg(?:@|[?#]|$)/i.test(String(url));
+  }
+
+  async function fetchPageDataUrl(url) {
+    const response = await chrome.runtime.sendMessage({ type: FETCH_PAGE_MESSAGE, url });
     if (!response?.ok) throw new Error(response?.error || 'Could not fetch a score page.');
     return response.dataUrl;
   }
@@ -339,5 +379,5 @@
 
   // Doubles as the double-injection guard and exposes the pure helpers so the
   // test suite can exercise them outside a browser.
-  window.museScoreToPdf = { addPageUrl, safeName, joinBytes, buildPdf };
+  window.museScoreToPdf = { addPageUrl, pageSizeRank, isVectorPage, safeName, joinBytes, buildPdf };
 })();
