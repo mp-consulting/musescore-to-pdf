@@ -9,11 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Per-page DPI retry: a page Audiveris aborts on is rasterized again at 400,
+  300, 500, 250, and 600 DPI until one of them transcribes. A page that fails
+  at every resolution no longer ends the run - the score is written from the
+  pages that worked, and the missing ones are named in an error.
 - Test suites: RSpec for the CLI (including end-to-end score joining against
   synthetic MXL fixtures) and Jest for the extension (PDF structure, URL
   filtering, injection guard).
 - Local CI scripts (`scripts/ci/check-ruby.sh`, `scripts/ci/check-extension.sh`)
   used by GitHub Actions and runnable locally.
+
+### Changed
+
+- Parts are joined across pages by staff count instead of by position, so a
+  page that orders its parts differently no longer mixes instruments into one
+  part. Parts unique to a page are kept as their own part rather than dropped
+  with everything past the shared part count, and a page missing a part
+  contributes whole-measure rests sized by that part's own divisions and time
+  signature.
+
+### Fixed
+
+- MXL packaging failed when `--output` was given a relative path, because
+  `zip` runs from a temporary directory.
 
 ## [1.0.0] - 2026-07-22
 

@@ -40,7 +40,11 @@ A single-file Ruby script that turns a scanned PDF into an editable score:
 ./pdf-to-score input.pdf
 ```
 
-It rasterizes the PDF at 300 DPI with `pdftoppm`, transcribes every page in a fresh Audiveris process to control memory usage, joins the parts detected consistently on every page into one continuous score, and imports the result into MuseScore when the `mscz` or `all` format is requested.
+It rasterizes the PDF at 300 DPI with `pdftoppm`, transcribes every page in a fresh Audiveris process to control memory usage, joins the pages into one continuous score, and imports the result into MuseScore when the `mscz` or `all` format is requested.
+
+Audiveris aborts on some combinations of page and resolution, so a page that fails is rasterized again at 400, 300, 500, 250, and 600 DPI until one of them gets through. A page that fails at every resolution is left out and named in an error, after the score has been written from the pages that did work.
+
+Parts are matched across pages by staff count rather than by position, because Audiveris detects parts page by page and may order them differently on each one. A part that no other page shares becomes a part of its own instead of being dropped, and a page missing a part contributes whole-measure rests so the parts stay aligned. Expect stray parts wherever the recognition split one staff across systems; they are yours to merge in MuseScore.
 
 All outputs are written into a single folder named after the PDF (`./input/` in the example above). Use `--output` to relocate or rename that folder: pointing it at an existing directory creates the PDF-named folder inside it, while any other path is used as the folder itself.
 
