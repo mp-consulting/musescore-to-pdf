@@ -9,11 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Extension support for scores published as images rather than SVG: page URLs
+  ending in `.png`/`.jpg`, with the size marker MuseScore appends to them
+  (`score_0.png@0`). Image pages are drawn at native resolution instead of
+  being upscaled, and the full-size page is preferred over a thumbnail of it.
+  Pages are accepted only from the asset folder the viewer is rendering, so a
+  recommended score's own `score_0` cannot be mistaken for a page.
+- Per-page DPI retry: a page Audiveris aborts on is rasterized again at 400,
+  300, 500, 250, and 600 DPI until one of them transcribes. A page that fails
+  at every resolution no longer ends the run - the score is written from the
+  pages that worked, and the missing ones are named in an error.
 - Test suites: RSpec for the CLI (including end-to-end score joining against
   synthetic MXL fixtures) and Jest for the extension (PDF structure, URL
   filtering, injection guard).
 - Local CI scripts (`scripts/ci/check-ruby.sh`, `scripts/ci/check-extension.sh`)
   used by GitHub Actions and runnable locally.
+
+### Changed
+
+- Parts are joined across pages by staff count instead of by position, so a
+  page that orders its parts differently no longer mixes instruments into one
+  part. Parts unique to a page are kept as their own part rather than dropped
+  with everything past the shared part count, and a page missing a part
+  contributes whole-measure rests sized by that part's own divisions and time
+  signature.
+
+### Fixed
+
+- MXL packaging failed when `--output` was given a relative path, because
+  `zip` runs from a temporary directory.
 
 ## [1.0.0] - 2026-07-22
 

@@ -1,25 +1,27 @@
-// Background service worker: fetches score SVG pages on behalf of the content
+// Background service worker: fetches score pages on behalf of the content
 // script, since MuseScore CDN pages cannot be read cross-origin from the page.
 'use strict';
 
-const FETCH_SVG_MESSAGE = 'FETCH_SVG_PAGE';
-const SVG_PATH_PATTERN = /\/score_\d+\.svg(?:$|\?)/i;
+const FETCH_PAGE_MESSAGE = 'FETCH_SCORE_PAGE';
+// A page is score_<index> as SVG or as an image, optionally followed by the
+// size marker MuseScore appends to image pages ("@0", "@500x660").
+const PAGE_PATH_PATTERN = /\/score_\d+\.(?:svg|png|jpe?g)(?:@\d+(?:x\d+)?)?$/i;
 const ALLOWED_HOST_SUFFIXES = ['.musescore.com', '.ustatik.com'];
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== FETCH_SVG_MESSAGE) return false;
+  if (message?.type !== FETCH_PAGE_MESSAGE) return false;
 
-  fetchSvgPage(message.url).then(
+  fetchScorePage(message.url).then(
     (dataUrl) => sendResponse({ ok: true, dataUrl }),
     (error) => sendResponse({ ok: false, error: error.message || String(error) })
   );
   return true;
 });
 
-async function fetchSvgPage(url) {
+async function fetchScorePage(url) {
   const parsed = new URL(url);
-  if (!isAllowedSvgUrl(parsed)) {
-    throw new Error('The requested page is not an allowed MuseScore SVG URL.');
+  if (!isAllowedPageUrl(parsed)) {
+    throw new Error('The requested page is not an allowed MuseScore score URL.');
   }
 
   const response = await fetch(parsed.href, { credentials: 'include', cache: 'no-store' });
@@ -27,17 +29,17 @@ async function fetchSvgPage(url) {
   return blobToDataUrl(await response.blob());
 }
 
-function isAllowedSvgUrl(parsed) {
+function isAllowedPageUrl(parsed) {
   const allowedHost = parsed.hostname === 'musescore.com' ||
     ALLOWED_HOST_SUFFIXES.some((suffix) => parsed.hostname.endsWith(suffix));
-  return parsed.protocol === 'https:' && allowedHost && SVG_PATH_PATTERN.test(parsed.pathname + parsed.search);
+  return parsed.protocol === 'https:' && allowedHost && PAGE_PATH_PATTERN.test(parsed.pathname);
 }
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error || new Error('Could not read the SVG response.'));
+    reader.onerror = () => reject(reader.error || new Error('Could not read the score page response.'));
     reader.readAsDataURL(blob);
   });
 }

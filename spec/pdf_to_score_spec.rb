@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 # Builds minimal per-page MXL fixtures for the ScoreJoiner specs.
+#
+# A page is described as a list of parts, each of them a hash: :measures says
+# how long the part is, :staves how many staves it covers (one unless given),
+# and :name what the part is called. Notes carry the part name as their
+# duration marker so specs can tell which part a joined measure came from.
 module MxlFixtures
   CONTAINER_XML = <<~XML
     <?xml version="1.0" encoding="UTF-8"?>
@@ -11,9 +16,10 @@ module MxlFixtures
 
   module_function
 
-  def write_page_mxl(dir, page_index, measure_counts)
+  def write_page_mxl(dir, page_index, parts)
+    parts = parts.map { |part| part.is_a?(Hash) ? part : { measures: part } }
     Dir.mktmpdir do |package|
-      File.write(File.join(package, 'score.musicxml'), musicxml_for(measure_counts))
+      File.write(File.join(package, 'score.musicxml'), musicxml_for(parts))
       FileUtils.mkdir_p(File.join(package, 'META-INF'))
       File.write(File.join(package, 'META-INF', 'container.xml'), CONTAINER_XML)
       target = File.join(dir, "page-#{page_index}.mxl")
@@ -21,24 +27,38 @@ module MxlFixtures
     end
   end
 
-  def musicxml_for(measure_counts)
+  def musicxml_for(parts)
     <<~XML
       <?xml version="1.0" encoding="UTF-8"?>
-      <score-partwise version="3.1"><part-list>#{score_parts_xml(measure_counts)}</part-list>#{parts_xml(measure_counts)}</score-partwise>
+      <score-partwise version="3.1"><part-list>#{score_parts_xml(parts)}</part-list>#{parts_xml(parts)}</score-partwise>
     XML
   end
 
-  def score_parts_xml(measure_counts)
-    measure_counts.each_index.map do |i|
-      %(<score-part id="P#{i + 1}"><part-name>Part #{i + 1}</part-name></score-part>)
+  def score_parts_xml(parts)
+    parts.each_with_index.map do |part, i|
+      %(<score-part id="P#{i + 1}"><part-name>#{part.fetch(:name, "Part #{i + 1}")}</part-name></score-part>)
     end.join
   end
 
-  def parts_xml(measure_counts)
-    measure_counts.each_with_index.map do |count, i|
-      measures = (1..count).map { |n| %(<measure number="#{n}"><note><duration>4</duration></note></measure>) }.join
+  def parts_xml(parts)
+    parts.each_with_index.map do |part, i|
+      measures = (1..part.fetch(:measures)).map { |n| measure_xml(n, part) }.join
       %(<part id="P#{i + 1}">#{measures}</part>)
     end.join
+  end
+
+  def measure_xml(number, part)
+    staves = part.fetch(:staves, 1)
+    body = part[:body] || %(<note><duration>#{4 * staves}</duration></note>)
+    %(<measure number="#{number}">#{attributes_xml(number, part, staves)}#{body}</measure>)
+  end
+
+  def attributes_xml(number, part, staves)
+    return '' unless number == 1 && (staves > 1 || part[:divisions])
+
+    divisions = %(<divisions>#{part[:divisions]}</divisions>) if part[:divisions]
+    staves_xml = %(<staves>#{staves}</staves>) if staves > 1
+    %(<attributes>#{divisions}#{staves_xml}</attributes>)
   end
 end
 
@@ -118,26 +138,60 @@ RSpec.describe PdfToScore::Converter do
   end
 end
 
+RSpec.describe PdfToScore::Transcriber do
+  def transcriber_for(dpi: 300, images_dir: '/work/images', pages_dir: '/work/pages')
+    options = PdfToScore::Options.defaults
+    options.dpi = dpi
+    described_class.new('/music/song.pdf', options, images_dir: images_dir, pages_dir: pages_dir)
+  end
+
+  describe 'retry resolutions' do
+    it 'tries the requested DPI first, then the fallbacks, without repeating one' do
+      expect(transcriber_for(dpi: 500).send(:attempt_dpis)).to eq([500, 400, 300, 250, 600])
+    end
+
+    it 'leaves out resolutions too low for reliable OMR' do
+      expect(transcriber_for.send(:attempt_dpis)).to all(be >= PdfToScore::MIN_RELIABLE_DPI)
+    end
+  end
+
+  describe 'page outputs' do
+    it 'collects every file a page left behind, movements and books included' do
+      Dir.mktmpdir do |pages|
+        %w[page-3.mxl page-3.mvt1.mxl page-3.omr page-30.mxl].each { |name| FileUtils.touch(File.join(pages, name)) }
+
+        outputs = transcriber_for(pages_dir: pages).send(:page_outputs, 3).map { |path| File.basename(path) }
+
+        expect(outputs).to contain_exactly('page-3.mxl', 'page-3.mvt1.mxl', 'page-3.omr')
+      end
+    end
+  end
+end
+
 RSpec.describe PdfToScore::ScoreJoiner do
   include MxlFixtures
 
-  it 'keeps common parts, renumbers measures, and marks page breaks' do
+  def join_pages(dir, pages)
+    pages.each_with_index { |parts, index| write_page_mxl(dir, index + 1, parts) }
+    described_class.new(dir, File.join(dir, 'joined')).join
+  end
+
+  def joined_parts(result)
+    REXML::Document.new(File.read(result.musicxml)).root.get_elements('part')
+  end
+
+  it 'renumbers measures across pages and marks page breaks' do
     Dir.mktmpdir do |dir|
       pages = File.join(dir, 'pages')
       FileUtils.mkdir_p(pages)
-      write_page_mxl(pages, 1, [2, 2]) # two parts, two measures each
-      write_page_mxl(pages, 2, [3])    # one part, three measures
-
-      result = described_class.new(pages, File.join(dir, 'joined')).join
+      result = join_pages(pages, [[{ measures: 2 }, { measures: 2 }], [{ measures: 3 }, { measures: 3 }]])
 
       expect(result.page_count).to eq(2)
-      expect(result.part_count).to eq(1)
+      expect(result.part_count).to eq(2)
       expect(File).to exist(result.mxl)
 
-      root = REXML::Document.new(File.read(result.musicxml)).root
-      parts = root.get_elements('part')
-      expect(parts.length).to eq(1)
-      expect(root.elements['part-list'].get_elements('score-part').length).to eq(1)
+      parts = joined_parts(result)
+      expect(parts.length).to eq(2)
 
       measures = parts.first.get_elements('measure')
       expect(measures.map { |m| m.attributes['number'] }).to eq(%w[1 2 3 4 5])
@@ -146,9 +200,69 @@ RSpec.describe PdfToScore::ScoreJoiner do
     end
   end
 
+  it 'matches parts by staff count when a page reorders them' do
+    Dir.mktmpdir do |dir|
+      voice = { measures: 2, name: 'Voice' }
+      piano = { measures: 2, staves: 2, name: 'Piano' }
+      result = join_pages(dir, [[voice, piano], [piano, voice], [voice, piano]])
+
+      expect(result.part_count).to eq(2)
+      durations = joined_parts(result).map { |part| part.get_elements('measure/note/duration').map(&:text).uniq }
+      expect(durations).to eq([['4'], ['8']]) # the piano's measures never land in the single-staff part
+    end
+  end
+
+  it 'gives a part of its own to a staff no other page has' do
+    Dir.mktmpdir do |dir|
+      voice = { measures: 2, name: 'Voice' }
+      piano = { measures: 2, staves: 2, name: 'Piano' }
+      result = join_pages(dir, [[voice, piano], [voice, piano, voice.merge(name: 'Stray')], [voice, piano]])
+
+      expect(result.part_count).to eq(3)
+      expect(joined_parts(result).last.get_elements('measure').length).to eq(6)
+    end
+  end
+
+  it 'fills a part with rests on pages that do not contain it' do
+    Dir.mktmpdir do |dir|
+      voice = { measures: 2, name: 'Voice' }
+      piano = { measures: 2, staves: 2, name: 'Piano' }
+      result = join_pages(dir, [[voice, piano], [voice], [voice, piano]])
+
+      piano_part = joined_parts(result).last
+      expect(piano_part.get_elements('measure').length).to eq(6)
+      rests = piano_part.get_elements('measure')[2..3].map { |m| REXML::XPath.match(m, 'note/rest').length }
+      expect(rests).to eq([2, 2]) # one whole-measure rest per staff
+    end
+  end
+
+  it 'sizes filling rests with the divisions of the part they belong to' do
+    Dir.mktmpdir do |dir|
+      voice = { measures: 2, name: 'Voice' }
+      piano = { measures: 2, staves: 2, name: 'Piano', divisions: 3 }
+      result = join_pages(dir, [[voice, piano], [voice], [voice, piano]])
+
+      piano_part = joined_parts(result).last
+      filled = piano_part.get_elements('measure')[2..3]
+      # divisions 3 in 4/4 makes a bar last 12, whatever the other part uses.
+      expect(filled.flat_map { |m| REXML::XPath.match(m, 'note/duration').map(&:text) }).to all(eq('12'))
+    end
+  end
+
+  it 'copies a measure that overruns its bar rather than reshaping it' do
+    Dir.mktmpdir do |dir|
+      overrun = %(<note><rest measure="yes"/><duration>70</duration></note><backup><duration>70</duration></backup>)
+      result = join_pages(dir, [[{ measures: 1, divisions: 12, body: overrun }]])
+
+      measure = joined_parts(result).first.get_elements('measure').first
+      expect(measure.get_elements('note/duration').map(&:text)).to eq(['70'])
+      expect(measure.get_elements('backup/duration').map(&:text)).to eq(['70'])
+    end
+  end
+
   it 'sorts pages numerically rather than lexically' do
     Dir.mktmpdir do |dir|
-      [10, 2, 1].each { |index| write_page_mxl(dir, index, [1]) }
+      [10, 2, 1].each { |index| write_page_mxl(dir, index, [{ measures: 1 }]) }
       result = described_class.new(dir, File.join(dir, 'joined')).join
       expect(result.page_count).to eq(3)
       root = REXML::Document.new(File.read(result.musicxml)).root
