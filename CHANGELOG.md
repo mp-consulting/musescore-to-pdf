@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A successful MuseScore import was reported as a failure when MuseScore 4
+  crashed while shutting down, which it does routinely on macOS after writing
+  the score. The import is now judged by the `.mscz` it leaves behind - present
+  and containing its score entry, so a crash partway through the write is still
+  a failure - and a stale file from an earlier run is removed beforehand rather
+  than passing for a fresh one.
 - MXL packaging failed when `--output` was given a relative path, because
   `zip` runs from a temporary directory.
 

@@ -121,6 +121,64 @@ RSpec.describe PdfToScore::Converter do
     end
   end
 
+  # MuseScore 4 regularly crashes on shutdown once the score is on disk, so the
+  # import is judged by the file rather than by the exit status.
+  describe 'MuseScore import' do
+    def import_into(dir, exit_status:, write_score: :complete)
+      converter = converter_for(output: File.join(dir, 'song'))
+      mscz = converter.send(:mscz_path)
+      FileUtils.mkdir_p(File.dirname(mscz))
+      allow(PdfToScore::Shell).to receive(:find_executable!).and_return('/bin/true')
+      allow(PdfToScore::Shell).to receive(:run) do
+        write_mscz(mscz, write_score)
+        exit_status
+      end
+      converter.send(:import_into_musescore, File.join(dir, 'song.mxl'))
+    end
+
+    def write_mscz(path, kind)
+      case kind
+      when :complete
+        Dir.mktmpdir do |package|
+          File.write(File.join(package, 'song.mscx'), '<museScore/>')
+          system('zip', '-q', path, 'song.mscx', chdir: package) || raise('zip failed')
+        end
+      when :truncated then File.write(path, "PK\x03\x04truncated")
+      end
+    end
+
+    it 'accepts a score that was written before MuseScore crashed' do
+      Dir.mktmpdir do |dir|
+        expect { import_into(dir, exit_status: false) }
+          .to output(/exited abnormally/).to_stdout
+      end
+    end
+
+    it 'fails when no score was written' do
+      Dir.mktmpdir do |dir|
+        expect { import_into(dir, exit_status: false, write_score: :none) }
+          .to raise_error(PdfToScore::Error, /Importing into MuseScore failed/)
+      end
+    end
+
+    it 'fails when the score was left truncated' do
+      Dir.mktmpdir do |dir|
+        expect { import_into(dir, exit_status: true, write_score: :truncated) }
+          .to raise_error(PdfToScore::Error, /Importing into MuseScore failed/)
+      end
+    end
+
+    it 'discards a score left over from an earlier run' do
+      Dir.mktmpdir do |dir|
+        converter = converter_for(output: File.join(dir, 'song'))
+        FileUtils.mkdir_p(File.dirname(converter.send(:mscz_path)))
+        write_mscz(converter.send(:mscz_path), :complete)
+        expect { import_into(dir, exit_status: false, write_score: :none) }
+          .to raise_error(PdfToScore::Error, /Importing into MuseScore failed/)
+      end
+    end
+  end
+
   describe 'input validation' do
     it 'rejects a missing or non-PDF input' do
       expect { converter_for(pdf: '/missing.pdf').send(:validate_input!) }

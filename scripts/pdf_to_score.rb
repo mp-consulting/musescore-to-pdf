@@ -57,6 +57,13 @@ module PdfToScore
 
       output
     end
+
+    # Returns nil instead of raising, for commands whose failure is an answer
+    # rather than a fault; their complaints are noise, so stderr is dropped.
+    def capture(*command)
+      output, _stderr, status = Open3.capture3(*command)
+      status.success? ? output : nil
+    end
   end
 
   # Extracts the MusicXML document from a compressed .mxl archive.
@@ -558,9 +565,25 @@ module PdfToScore
       "#{output_base}.mscz"
     end
 
+    # MuseScore 4 on macOS often crashes while shutting down, well after it has
+    # written the score, so the file it leaves behind decides the outcome
+    # rather than its exit status.
     def import_into_musescore(mxl)
       mscore = Shell.find_executable!(@options.musescore || DEFAULT_MUSESCORE)
-      Shell.run!(mscore, '-o', mscz_path, mxl, label: 'Importing into MuseScore')
+      FileUtils.rm_f(mscz_path)
+      clean_exit = Shell.run(mscore, '-o', mscz_path, mxl, label: 'Importing into MuseScore')
+      raise Error, 'Importing into MuseScore failed' unless mscz_written?
+
+      puts '[MuseScore exited abnormally after writing the score]' unless clean_exit
+    end
+
+    # A crash partway through the write leaves a truncated archive, so the
+    # score entry has to be there for the import to count as done.
+    def mscz_written?
+      return false unless File.size?(mscz_path)
+
+      entries = Shell.capture('unzip', '-Z1', mscz_path)
+      entries.to_s.lines.any? { |entry| entry.strip.end_with?('.mscx') }
     end
 
     def prune_outputs(result)
