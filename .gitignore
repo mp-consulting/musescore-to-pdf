@@ -8,6 +8,9 @@
 # Dependencies
 node_modules/
 
+# Source PDFs fed to pdf-to-score
+/input/
+
 # Generated score conversions (pdf-to-score output folders)
 /output/
 *-work/
