@@ -35,6 +35,6 @@
     "check": "scripts/ci/check-extension.sh && scripts/ci/check-ruby.sh"
   },
   "devDependencies": {
-    "jest": "^30.0.0"
+    "jest": "^30.5.1"
   }
 }
