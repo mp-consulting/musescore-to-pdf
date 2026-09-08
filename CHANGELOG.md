@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-08
+
 ### Added
 
 - Extension support for scores published as images rather than SVG: page URLs
@@ -33,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with everything past the shared part count, and a page missing a part
   contributes whole-measure rests sized by that part's own divisions and time
   signature.
+- CI and RuboCop now target Ruby 3.4 instead of 3.1, which reached end of life
+  in March 2025.
 
 ### Fixed
 
