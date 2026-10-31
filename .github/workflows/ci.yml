@@ -11,8 +11,8 @@ jobs:
     name: Ruby CLI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
@@ -23,8 +23,8 @@ jobs:
     name: Chrome extension
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
