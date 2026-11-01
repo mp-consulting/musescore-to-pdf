@@ -36,5 +36,9 @@
   },
   "devDependencies": {
     "jest": "^30.5.2"
+  },
+  "overrides": {
+    "glob": "^14.0.3",
+    "minimatch": "^11.0.3"
   }
 }
